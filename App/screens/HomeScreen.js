@@ -1,4 +1,4 @@
-import React, {useContext, useState, useEffect} from 'react';
+import React, {useContext, useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
 import {AuthContext} from '../context/AuthContext';
 import QRCodeScanner from 'react-native-qrcode-scanner';
 import {RNCamera} from 'react-native-camera';
-import VolunteerRegistrationModal from '../Component/VolunteerRegistrationModal';
-import axios from 'axios';
-import { getApiConfig } from '../config';
 import FindVolunteerScreen from './FindVolunteerScreen';
+import axios from 'axios';
+import {getApiConfig} from '../config';
+import {
+  widthPercentageToDP as wp,
+  heightPercentageToDP as hp,
+} from 'react-native-responsive-screen';
 
-// Helper function to get today's date
 const getTodayDate = () => {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
@@ -31,17 +33,8 @@ export const HomeScreen = ({navigation}) => {
   const [showVolunteerModal, setShowVolunteerModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scannedData, setScannedData] = useState(null);
-  const [apiConfig, setApiConfig] = useState(null);
 
-  useEffect(() => {
-    const setupApiConfig = async () => {
-      const config = await getApiConfig();
-      setApiConfig(config);
-    };
-    setupApiConfig();
-  }, []);
-
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedOption === 'scan') {
       setShowScanner(true);
     } else if (selectedOption === 'menu') {
@@ -50,70 +43,50 @@ export const HomeScreen = ({navigation}) => {
   };
 
   const fetchUserData = async registrationId => {
-    if (!apiConfig) {
-      Alert.alert('Error', 'API configuration not loaded');
-      return;
-    }
-
     try {
       setIsLoading(true);
       const todayDate = getTodayDate();
       console.log("Today's date:", todayDate);
 
-      // Clean up registrationId to ensure it's a valid format
       const cleanRegistrationId = registrationId.replace(/[^0-9]/g, '');
       console.log('Cleaned Registration ID:', cleanRegistrationId);
 
-      // Validate registration ID
-      if (!cleanRegistrationId || cleanRegistrationId.length === 0) {
-        throw new Error('Please enter a valid registration ID');
-      }
-
-      const apiUrl = `${apiConfig.BASE_URL}${apiConfig.ENDPOINTS.SCHEDULE}?registrationid=${cleanRegistrationId}&date=${todayDate}`;
+      const apiUrl = `${
+        getApiConfig().BASE_URL
+      }/api/foodtrucks/schedule?registrationid=${cleanRegistrationId}&date=${todayDate}`;
       console.log('Making API request to:', apiUrl);
-      console.log('Registration ID:', cleanRegistrationId);
-      console.log('Date:', todayDate);
 
-      // Log the full request configuration
-      console.log('Request Configuration:', {
-        url: apiUrl,
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      });
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      };
+      console.log('Request Headers:', headers);
 
       const response = await axios.get(apiUrl, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers,
         validateStatus: function (status) {
-          return status >= 200 && status < 500; // Accept all status codes from 200 to 499
+          return status >= 200 && status < 500; // Accept status codes between 200-499
         },
       });
+      console.log('HomeScreen API Response:', response.data);
 
-      console.log('API Response Status:', response.status);
-      console.log('API Response Headers:', response.headers);
-      console.log('API Response Data:', response.data);
-
-      // Check if the response indicates no data found
+      // Handle status code 300 specifically
       if (response.status === 300 || response.data.status === 300) {
+        setShowScanner(false); // Close camera first
+        setScannedData(null); // Clear any scanned data
         Alert.alert(
           'User Not Found',
-          'The registration ID you entered does not exist in our system.',
+          'The registration ID you scanned does not exist in our system.',
           [
             {
-              text: 'Try Again',
+              text: 'OK',
               onPress: () => {
-                setShowScanner(false);
-                setShowVolunteerModal(false);
+                setShowVolunteerModal(false); // Ensure volunteer modal is closed
+                setSelectedOption('scan'); // Reset to initial state
               },
-              style: 'default',
             },
           ],
-          { cancelable: false },
+          {cancelable: false},
         );
         return;
       }
@@ -122,55 +95,58 @@ export const HomeScreen = ({navigation}) => {
         throw new Error('No data received from server');
       }
 
-      const userData = response.data;
-      // Add registration ID to the user data
-      userData.registrationid = cleanRegistrationId;
+      const userData = {
+        ...response.data,
+        registrationid: cleanRegistrationId,
+      };
+      console.log('Setting scanned data with registration ID:', userData);
+
       setScannedData(userData);
       setShowScanner(false);
       setShowVolunteerModal(true);
     } catch (error) {
       console.error('API Error:', error);
-      console.error('Error Response:', error.response?.data);
-      console.error('Error Status:', error.response?.status);
-      console.error('Error Headers:', error.response?.headers);
-      console.error('Error Config:', error.config);
-      console.error('Full Error Object:', JSON.stringify(error, null, 2));
-
       let errorMessage = 'Failed to fetch user data';
       let errorTitle = 'Error';
+
+      if (error.message === 'Server not configured') {
+        errorMessage = 'Please configure server settings first';
+        Alert.alert('Configuration Required', errorMessage, [
+          {
+            text: 'Configure',
+            onPress: () => {
+              setShowScanner(false);
+              navigation.navigate('Settings');
+            },
+          },
+          {text: 'Cancel', onPress: () => setShowScanner(false)},
+        ]);
+        return;
+      }
 
       if (error.response) {
         if (error.response.status === 404) {
           errorTitle = 'User Not Found';
-          errorMessage = 'The registration ID you entered does not exist in our system.';
+          errorMessage =
+            'The registration ID you scanned does not exist in our system.';
         } else if (error.response.status === 400) {
-          errorTitle = 'Invalid Input';
-          errorMessage = error.response.data.error || 'Please enter a valid registration ID';
-          console.error('400 Error Details:', error.response.data);
+          errorTitle = 'Invalid QR Code';
+          errorMessage =
+            error.response.data.error ||
+            'The QR code is not valid. Please try again.';
         }
       } else if (error.request) {
         errorTitle = 'Connection Error';
-        errorMessage = 'Unable to connect to the server. Please check your internet connection.';
-        console.error('Request Error:', error.request);
-      } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage =
+          'Unable to connect to the server. Please check your internet connection.';
       }
 
-      Alert.alert(
-        errorTitle,
-        errorMessage,
-        [
-          {
-            text: 'Try Again',
-            onPress: () => {
-              setShowScanner(false);
-              setShowVolunteerModal(false);
-            },
-            style: 'default',
-          },
-        ],
-        { cancelable: false },
-      );
+      Alert.alert(errorTitle, errorMessage, [
+        {
+          text: 'OK',
+          onPress: () => setShowScanner(false),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -181,7 +157,6 @@ export const HomeScreen = ({navigation}) => {
       console.log('QR Code Data:', e.data);
       let registrationId = e.data;
 
-      // Try to parse as JSON if it looks like JSON
       if (e.data.startsWith('{') || e.data.startsWith('[')) {
         try {
           const parsedData = JSON.parse(e.data);
@@ -200,7 +175,6 @@ export const HomeScreen = ({navigation}) => {
         throw new Error('Invalid QR code data');
       }
 
-      // Ensure registrationId is a string and clean it
       registrationId = String(registrationId).replace(/[^0-9]/g, '');
       console.log('Sending registration ID to API:', registrationId);
 
@@ -268,7 +242,7 @@ export const HomeScreen = ({navigation}) => {
           setScannedData(null);
         }}
         initialData={scannedData}
-        apiConfig={apiConfig}
+        registrationId={scannedData?.registrationid}
       />
     );
   }
@@ -276,9 +250,7 @@ export const HomeScreen = ({navigation}) => {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>
-          Welcome to Global Encounter Food Management
-        </Text>
+        <Text style={styles.title}>Welcome to Food Management</Text>
 
         <View style={styles.optionsContainer}>
           <TouchableOpacity
@@ -327,141 +299,149 @@ export const HomeScreen = ({navigation}) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#F5F7FA',
+    padding: wp('5%'),
+    backgroundColor: '#fff',
   },
   content: {
     flex: 1,
-  },
-  bottomContainer: {
-    paddingBottom: 20,
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 24,
+    fontSize: wp('6%'),
     fontWeight: 'bold',
-    marginBottom: 30,
+    marginBottom: hp('5%'),
     textAlign: 'center',
-    color: '#2C3E50',
-    marginTop: 20,
+    color: '#333',
   },
   optionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 30,
+    marginBottom: hp('5%'),
   },
   optionButton: {
-    padding: 15,
-    borderRadius: 10,
-    backgroundColor: '#E8F0FE',
-    width: '45%',
+    padding: hp('2%'),
+    borderRadius: wp('2%'),
+    backgroundColor: '#f0f0f0',
+    width: wp('40%'),
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D6E0F0',
+    justifyContent: 'center',
+    height: hp('10%'),
   },
   selectedOption: {
-    backgroundColor: '#4A90E2',
-    borderColor: '#3A7BC8',
+    backgroundColor: '#007AFF',
   },
   optionText: {
-    fontSize: 16,
+    fontSize: wp('4%'),
+    color: '#000',
     textAlign: 'center',
-    color: '#2C3E50',
-    fontWeight: '500',
   },
   selectedOptionText: {
-    color: '#FFFFFF',
+    color: '#fff',
+  },
+  bottomContainer: {
+    marginBottom: hp('2%'),
   },
   continueButton: {
-    backgroundColor: '#4A90E2',
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: '#007AFF',
+    padding: hp('2%'),
+    borderRadius: wp('2%'),
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+    marginBottom: hp('2%'),
   },
   continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: wp('4.5%'),
+    fontWeight: 'bold',
+  },
+  settingsButton: {
+    backgroundColor: '#4CAF50',
+    padding: hp('2%'),
+    borderRadius: wp('2%'),
+    alignItems: 'center',
+    marginBottom: hp('2%'),
+  },
+  settingsButtonText: {
+    color: '#fff',
+    fontSize: wp('4.5%'),
+    fontWeight: 'bold',
+  },
+  logoutButton: {
+    backgroundColor: '#FF3B30',
+    padding: hp('2%'),
+    borderRadius: wp('2%'),
+    alignItems: 'center',
+  },
+  logoutButtonText: {
+    color: '#fff',
+    fontSize: wp('4.5%'),
+    fontWeight: 'bold',
   },
   scannerContainer: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  camera: {
-    width: 300,
-    height: 300,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#4A90E2',
-  },
-  topView: {
-    flex: 0,
-    height: 'auto',
-    width: '100%',
-  },
-  bottomView: {
-    flex: 0,
-    height: 'auto',
-    width: '100%',
-  },
-  instructionBox: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 10,
-    margin: 20,
-    marginTop: 40,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    width: '90%',
-    alignSelf: 'center',
-  },
-  instructionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  instructionText: {
-    fontSize: 16,
-    color: '#5D6D7E',
-    lineHeight: 24,
-    textAlign: 'left',
-  },
-  buttonTouchable: {
-    padding: 16,
-    backgroundColor: '#4A90E2',
-    borderRadius: 8,
-    margin: 20,
-    marginBottom: 40,
-  },
-  buttonText: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    textAlign: 'center',
+    backgroundColor: '#000',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#fff',
   },
   loadingText: {
-    marginTop: 20,
-    fontSize: 16,
-    color: '#5D6D7E',
-    fontWeight: '500',
+    marginTop: hp('2%'),
+    fontSize: wp('4%'),
+    color: '#777',
+  },
+  instructionBox: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: wp('2%'),
+    paddingVertical: hp('2%'),
+    paddingHorizontal: wp('4%'),
+    marginHorizontal: wp('4%'),
+    marginTop: hp('4%'),
+    marginBottom: hp('2%'),
+    width: wp('85%'),
+    alignSelf: 'center',
+  },
+  instructionTitle: {
+    fontSize: wp('4.5%'),
+    color: '#fff',
+    fontWeight: 'bold',
+    marginBottom: hp('1%'),
+    textAlign: 'center',
+  },
+  instructionText: {
+    fontSize: wp('3.5%'),
+    color: '#fff',
+    textAlign: 'center',
+    lineHeight: hp('2.5%'),
+  },
+  buttonTouchable: {
+    padding: hp('1.5%'),
+    backgroundColor: '#007AFF',
+    borderRadius: wp('2%'),
+    marginHorizontal: wp('4%'),
+    marginBottom: hp('4%'),
+    width: wp('85%'),
+    alignSelf: 'center',
+  },
+  buttonText: {
+    fontSize: wp('4%'),
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  camera: {
+    flex: 1,
+  },
+  topView: {
+    flex: 0,
+    backgroundColor: 'transparent',
+    paddingTop: hp('2%'),
+  },
+  bottomView: {
+    flex: 0,
+    backgroundColor: 'transparent',
+    paddingBottom: hp('2%'),
   },
 });
 

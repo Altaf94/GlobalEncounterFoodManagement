@@ -1,9 +1,20 @@
 import React, {useState, useEffect} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator} from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import VolunteerRegistrationModal from '../Component/VolunteerRegistrationModal';
-import { getApiConfig } from '../config';
+import {getApiConfig} from '../config';
 
-const FindVolunteerScreen = ({onClose, initialData, apiConfig: initialApiConfig}) => {
+const FindVolunteerScreen = ({
+  onClose,
+  initialData,
+  apiConfig: initialApiConfig,
+}) => {
   const [isModalVisible, setIsModalVisible] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [apiConfig, setApiConfig] = useState(initialApiConfig);
@@ -23,22 +34,12 @@ const FindVolunteerScreen = ({onClose, initialData, apiConfig: initialApiConfig}
     onClose();
   };
 
-  if (!apiConfig) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading configuration...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Find Volunteer</Text>
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={() => setIsModalVisible(true)}
-        disabled={!apiConfig}>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => setIsModalVisible(true)}>
         <Text style={styles.buttonText}>Enter Registration ID</Text>
       </TouchableOpacity>
 

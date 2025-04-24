@@ -10,29 +10,16 @@ import {
   Alert,
 } from 'react-native';
 import axios from 'axios';
-
-// Configuration
-// Configuration
-// ... existing code ...
-const API_CONFIG = {
-  BASE_URL: __DEV__
-    ? 'http://192.168.8.35:8000'
-    : // ? 'http://192.168.0.126:8000'
-      'https://your-production-url.com',
-  ENDPOINTS: {
-    SCHEDULE: '/api/foodtrucks/schedule',
-  },
-};
-// ... existing code ...
-// ... existing code ...
+import {BASE_URL, FOODTRUCKS_ENDPOINT} from '../config';
+import {
+  widthPercentageToDP as wp,
+  heightPercentageToDP as hp,
+} from 'react-native-responsive-screen';
 
 // Helper functions
 const getTodayDate = () => {
   const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-    2,
-    '0',
-  )}-${String(today.getDate()).padStart(2, '0')}`;
+  return today.toISOString().split('T')[0];
 };
 
 const getCurrentHour = () => new Date().getHours();
@@ -42,9 +29,10 @@ const VolunteerRegistrationModal = ({
   onClose,
   initialData,
   registrationId: initialRegistrationId,
-  apiConfig,
 }) => {
-  const [registrationId, setRegistrationId] = useState(initialRegistrationId || '');
+  const [registrationId, setRegistrationId] = useState(
+    initialRegistrationId || '',
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [userData, setUserData] = useState(initialData || null);
   const [activeMeal, setActiveMeal] = useState(null);
@@ -53,6 +41,10 @@ const VolunteerRegistrationModal = ({
     if (initialData) {
       setUserData(initialData);
       setActiveMeal(determineMealStatus(initialData));
+      // Set registration ID from initialData if available
+      if (initialData.registrationid) {
+        setRegistrationId(initialData.registrationid);
+      }
     }
     if (initialRegistrationId) {
       setRegistrationId(initialRegistrationId);
@@ -82,20 +74,16 @@ const VolunteerRegistrationModal = ({
         type: 'dinner',
         available: data.dinner === true,
         text: 'Avail Dinner',
-        statusColor: data.dinner ? styles.mealAvailable : styles.mealUnavailable,
+        statusColor: data.dinner
+          ? styles.mealAvailable
+          : styles.mealUnavailable,
         statusText: data.dinner ? 'Dinner Available' : 'Dinner Already Availed',
       };
     }
   };
 
   const fetchVolunteerData = async () => {
-    if (!apiConfig) {
-      Alert.alert('Error', 'API configuration not loaded');
-      return;
-    }
-
     const trimmedId = registrationId.trim();
-
     if (!trimmedId) {
       Alert.alert('Error', 'Please enter registration ID');
       return;
@@ -106,25 +94,19 @@ const VolunteerRegistrationModal = ({
     }
     setIsLoading(true);
     try {
-      const apiUrl = `${apiConfig.BASE_URL}${
-        apiConfig.ENDPOINTS.SCHEDULE
-      }?registrationid=${trimmedId}&date=${getTodayDate()}`;
-      
-      console.log('Fetching data from:', apiUrl);
-      
+      const apiUrl = `${BASE_URL}${FOODTRUCKS_ENDPOINT}?registrationid=${trimmedId}&date=${getTodayDate()}`;
+
       const response = await axios.get(apiUrl, {
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          Accept: 'application/json',
         },
         validateStatus: function (status) {
-          return status >= 200 && status < 500; // Accept all status codes from 200 to 499
+          return status >= 200 && status < 500;
         },
       });
-      
-      console.log('API Response:', response.data);
-      
-      // Check if the response indicates no data found
+      console.log('VolunteerRegistrationModal GET Response:', response.data);
+
       if (response.status === 300 || response.data.status === 300) {
         Alert.alert(
           'User Not Found',
@@ -140,34 +122,33 @@ const VolunteerRegistrationModal = ({
               style: 'default',
             },
           ],
-          { cancelable: false },
+          {cancelable: false},
         );
         return;
       }
 
       const data = response.data;
-      data.registrationid = trimmedId; // Add registration ID to the data
+      data.registrationid = trimmedId;
       setUserData(data);
       setActiveMeal(determineMealStatus(data));
     } catch (error) {
-      console.error('API Error:', error);
-      console.error('Error Response:', error.response?.data);
-      console.error('Error Status:', error.response?.status);
-
       let errorMessage = 'Failed to fetch data';
       let errorTitle = 'Error';
 
       if (error.response) {
         if (error.response.status === 404) {
           errorTitle = 'User Not Found';
-          errorMessage = 'The registration ID you entered does not exist in our system.';
+          errorMessage =
+            'The registration ID you entered does not exist in our system.';
         } else if (error.response.status === 400) {
           errorTitle = 'Invalid Input';
-          errorMessage = error.response.data.error || 'Please enter a valid registration ID';
+          errorMessage =
+            error.response.data.error || 'Please enter a valid registration ID';
         }
       } else if (error.request) {
         errorTitle = 'Connection Error';
-        errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+        errorMessage =
+          'Unable to connect to the server. Please check your internet connection.';
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -186,7 +167,7 @@ const VolunteerRegistrationModal = ({
             style: 'default',
           },
         ],
-        { cancelable: false },
+        {cancelable: false},
       );
     } finally {
       setIsLoading(false);
@@ -194,17 +175,13 @@ const VolunteerRegistrationModal = ({
   };
 
   const handleMealAction = async () => {
-    if (!apiConfig) {
-      Alert.alert('Error', 'API configuration not loaded');
-      return;
-    }
-
     if (!userData || !activeMeal) return;
     setIsLoading(true);
     try {
-      // Get registration ID from userData or input
+      // First try to get registration ID from userData, then from state
       const registrationIdToUse = userData.registrationid || registrationId;
-      
+      console.log('Using registration ID:', registrationIdToUse);
+
       if (!registrationIdToUse) {
         Alert.alert('Error', 'Registration ID is required');
         return;
@@ -217,31 +194,25 @@ const VolunteerRegistrationModal = ({
         dinner: activeMeal.type === 'dinner' ? false : userData.dinner,
       };
 
-      console.log('Sending request data:', JSON.stringify(requestData, null, 2));
-      console.log('User data:', JSON.stringify(userData, null, 2));
-      console.log('Active meal:', JSON.stringify(activeMeal, null, 2));
-      console.log('Registration ID being used:', registrationIdToUse);
+      console.log('Sending PATCH request with data:', requestData);
 
       const response = await axios.patch(
-        `${apiConfig.BASE_URL}${apiConfig.ENDPOINTS.SCHEDULE}`,
+        `${BASE_URL}${FOODTRUCKS_ENDPOINT}`,
         requestData,
         {
           headers: {
             'Content-Type': 'application/json',
+            Accept: 'application/json',
           },
         },
       );
+      console.log('VolunteerRegistrationModal PATCH Response:', response.data);
 
       const updatedData = response.data;
       setUserData(updatedData);
       Alert.alert('Success', 'Meal status updated successfully');
       onClose();
     } catch (error) {
-      console.error('Update Error:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      console.error('Error headers:', error.response?.headers);
-      console.error('Request data:', error.config?.data);
       Alert.alert('Error', 'Failed to update meal status');
     } finally {
       setIsLoading(false);
@@ -349,86 +320,86 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: 'white',
-    padding: 25,
-    borderRadius: 15,
-    width: '90%',
-    maxWidth: 400,
+    padding: wp('5%'),
+    borderRadius: wp('3%'),
+    width: wp('90%'),
+    maxWidth: wp('90%'),
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: {width: 0, height: hp('0.2%')},
     shadowOpacity: 0.25,
-    shadowRadius: 4,
+    shadowRadius: wp('1%'),
     elevation: 5,
   },
   title: {
-    fontSize: 22,
+    fontSize: wp('5.5%'),
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: hp('2%'),
     textAlign: 'center',
     color: '#333',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 20,
-    fontSize: 16,
+    borderRadius: wp('2%'),
+    padding: hp('2%'),
+    marginBottom: hp('2%'),
+    fontSize: wp('4%'),
     backgroundColor: '#f9f9f9',
   },
   detailsContainer: {
-    marginBottom: 25,
+    marginBottom: hp('3%'),
   },
   detailText: {
-    fontSize: 16,
-    marginBottom: 10,
+    fontSize: wp('4%'),
+    marginBottom: hp('1%'),
     color: '#555',
   },
   mealStatusText: {
-    fontSize: 17,
+    fontSize: wp('4.2%'),
     fontWeight: '600',
-    marginTop: 15,
-    padding: 10,
-    borderRadius: 8,
+    marginTop: hp('2%'),
+    padding: hp('1.2%'),
+    borderRadius: wp('2%'),
     textAlign: 'center',
   },
   mealAvailable: {
     color: '#4CAF50',
+    backgroundColor: '#E8F5E9',
   },
   mealUnavailable: {
     color: '#F44336',
+    backgroundColor: '#FFEBEE',
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: wp('2%'),
   },
   button: {
     flex: 1,
-    paddingVertical: 15,
-    borderRadius: 8,
+    paddingVertical: hp('1.8%'),
+    borderRadius: wp('2%'),
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: {width: 0, height: hp('0.2%')},
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: wp('1%'),
     elevation: 2,
   },
   cancelButton: {
-    backgroundColor: 'grey',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#9E9E9E',
   },
   continueButton: {
-    backgroundColor: '#2196f3',
+    backgroundColor: '#2196F3',
   },
   availButton: {
-    backgroundColor: '#4caf50',
+    backgroundColor: '#4CAF50',
   },
   buttonText: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 16,
+    fontSize: wp('4%'),
   },
 });
 

@@ -1,46 +1,20 @@
-// config.js
-// Configuration
-// Configuration
-// ... existing code ...
-import { Platform } from 'react-native';
-import { getIpAddress } from 'react-native-network-info';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {Alert, Platform} from 'react-native';
 
-// Default configuration
-const DEFAULT_CONFIG = {
-  BASE_URL: 'http://localhost:8000',
+// Production URL (Railway)
+const RAILWAY_URL = 'https://pythonbackend-production-0ee2.up.railway.app';
+const LOCAL_URL = Platform.select({
+  ios: 'http://127.0.0.1:8000',
+  android: 'http://10.0.2.2:8000',
+});
+
+export const BASE_URL = RAILWAY_URL;
+export const FOODTRUCKS_ENDPOINT = '/api/foodtrucks/schedule';
+
+export const getApiConfig = () => ({
+  BASE_URL: RAILWAY_URL,
   ENDPOINTS: {
-    SCHEDULE: '/api/foodtrucks/schedule',
     USER_DATA: '/api/userdata/registration',
+    SCHEDULE: FOODTRUCKS_ENDPOINT,
   },
-};
-
-// Function to get the correct local IP
-const getLocalIp = async () => {
-  try {
-    if (Platform.OS === 'android') {
-      // For Android, we need to use the computer's IP address
-      return '192.168.8.35'; // Replace with your computer's IP address
-    } else if (Platform.OS === 'ios') {
-      // For iOS, we can use localhost
-      return 'localhost';
-    }
-  } catch (error) {
-    console.error('Error getting local IP:', error);
-    return 'localhost';
-  }
-};
-
-// Function to get the API configuration
-export const getApiConfig = async () => {
-  const localIp = await getLocalIp();
-  return {
-    BASE_URL: `http://${localIp}:8000`,
-    ENDPOINTS: DEFAULT_CONFIG.ENDPOINTS,
-  };
-};
-
-// ... existing code ...
-// ... existing code ...
-// ... existing code ...
-
-export default DEFAULT_CONFIG;
+});
