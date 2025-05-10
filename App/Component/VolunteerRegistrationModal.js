@@ -68,6 +68,8 @@ const VolunteerRegistrationModal = ({
         text: 'Avail Lunch',
         statusColor: data.lunch ? styles.mealAvailable : styles.mealUnavailable,
         statusText: data.lunch ? 'Lunch Available' : 'Lunch Already Availed',
+        foodTruckName: data.food_truck_name,
+        foodTruckType: data.food_truck_type,
       };
     } else {
       return {
@@ -78,6 +80,8 @@ const VolunteerRegistrationModal = ({
           ? styles.mealAvailable
           : styles.mealUnavailable,
         statusText: data.dinner ? 'Dinner Available' : 'Dinner Already Availed',
+        foodTruckName: data.food_truck_name,
+        foodTruckType: data.food_truck_type,
       };
     }
   };
@@ -242,10 +246,10 @@ const VolunteerRegistrationModal = ({
             <>
               <View style={styles.detailsContainer}>
                 <Text style={styles.detailText}>
-                  Name: {userData.food_truck_name}
+                  Name: {activeMeal?.foodTruckName}
                 </Text>
                 <Text style={styles.detailText}>
-                  Type: {userData.food_truck_type}
+                  Type: {activeMeal?.foodTruckType}
                 </Text>
                 <Text style={styles.detailText}>Date: {userData.date}</Text>
                 <Text style={[styles.mealStatusText, activeMeal?.statusColor]}>

@@ -65,25 +65,120 @@ export const HomeScreen = ({navigation}) => {
       const response = await axios.get(apiUrl, {
         headers,
         validateStatus: function (status) {
-          return status >= 200 && status < 500; // Accept status codes between 200-499
+          return status >= 200 && status < 500;
         },
       });
       console.log('HomeScreen API Response:', response.data);
 
-      // Handle status code 300 specifically
-      if (response.status === 300 || response.data.status === 300) {
-        setShowScanner(false); // Close camera first
-        setScannedData(null); // Clear any scanned data
+      if (!response.data) {
+        throw new Error('No data received from server');
+      }
+
+      const currentHour = new Date().getHours();
+      const isLunchTime = currentHour < 16; // Before 4PM
+      const userData = response.data;
+
+      // Check if meal is available and automatically update if it is
+      if (
+        (isLunchTime && userData.lunch) ||
+        (!isLunchTime && userData.dinner)
+      ) {
+        try {
+          const patchData = {
+            registrationid: cleanRegistrationId,
+            date: todayDate,
+            lunch: isLunchTime ? false : userData.lunch,
+            dinner: isLunchTime ? userData.dinner : false,
+          };
+
+          const patchResponse = await axios.patch(
+            `${getApiConfig().BASE_URL}/api/foodtrucks/schedule/`,
+            patchData,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+              },
+            },
+          );
+
+          if (patchResponse.data) {
+            setScannedData(patchResponse.data);
+            setShowScanner(false);
+            Alert.alert(
+              '🎉 Success!',
+              `\n${
+                isLunchTime ? 'Lunch' : 'Dinner'
+              } has been successfully availed.\n\nThank you for using our service!`,
+              [
+                {
+                  text: 'OK',
+                  style: 'default',
+                },
+              ],
+              {cancelable: false},
+            );
+          }
+        } catch (error) {
+          console.error('PATCH Error:', error);
+          Alert.alert(
+            '❌ Error',
+            '\nFailed to update meal status.\n\nPlease try again later.',
+            [
+              {
+                text: 'OK',
+                style: 'default',
+              },
+            ],
+            {cancelable: false},
+          );
+        }
+      } else {
+        setScannedData(userData);
+        setShowScanner(false);
+        const currentTime = new Date().getHours();
+        const isLunchTime = currentTime < 16; // Before 4PM
+        const nextMealMessage = isLunchTime
+          ? 'Dinner will be available after 4 PM.'
+          : 'Lunch will be available tomorrow.';
+
         Alert.alert(
-          'User Not Found',
-          'The registration ID you scanned does not exist in our system.',
+          'ℹ️ Meal Status',
+          `\n${
+            isLunchTime ? 'Lunch' : 'Dinner'
+          } has already been availed.\n\n${nextMealMessage}`,
           [
             {
               text: 'OK',
+              style: 'default',
+            },
+          ],
+          {cancelable: false},
+        );
+      }
+    } catch (error) {
+      console.error('API Error:', error);
+      let errorMessage = 'Failed to fetch user data';
+      let errorTitle = '❌ Error';
+
+      if (error.message === 'Server not configured') {
+        errorMessage = 'Please configure server settings first';
+        Alert.alert(
+          '⚙️ Configuration Required',
+          '\nPlease configure server settings to continue.\n\nWould you like to configure now?',
+          [
+            {
+              text: 'Configure',
               onPress: () => {
-                setShowVolunteerModal(false); // Ensure volunteer modal is closed
-                setSelectedOption('scan'); // Reset to initial state
+                setShowScanner(false);
+                navigation.navigate('Settings');
               },
+              style: 'default',
+            },
+            {
+              text: 'Cancel',
+              onPress: () => setShowScanner(false),
+              style: 'cancel',
             },
           ],
           {cancelable: false},
@@ -91,62 +186,35 @@ export const HomeScreen = ({navigation}) => {
         return;
       }
 
-      if (!response.data) {
-        throw new Error('No data received from server');
-      }
-
-      const userData = {
-        ...response.data,
-        registrationid: cleanRegistrationId,
-      };
-      console.log('Setting scanned data with registration ID:', userData);
-
-      setScannedData(userData);
-      setShowScanner(false);
-      setShowVolunteerModal(true);
-    } catch (error) {
-      console.error('API Error:', error);
-      let errorMessage = 'Failed to fetch user data';
-      let errorTitle = 'Error';
-
-      if (error.message === 'Server not configured') {
-        errorMessage = 'Please configure server settings first';
-        Alert.alert('Configuration Required', errorMessage, [
-          {
-            text: 'Configure',
-            onPress: () => {
-              setShowScanner(false);
-              navigation.navigate('Settings');
-            },
-          },
-          {text: 'Cancel', onPress: () => setShowScanner(false)},
-        ]);
-        return;
-      }
-
       if (error.response) {
         if (error.response.status === 404) {
-          errorTitle = 'User Not Found';
+          errorTitle = '🔍 User Not Found';
           errorMessage =
             'The registration ID you scanned does not exist in our system.';
         } else if (error.response.status === 400) {
-          errorTitle = 'Invalid QR Code';
+          errorTitle = '⚠️ Invalid QR Code';
           errorMessage =
             error.response.data.error ||
             'The QR code is not valid. Please try again.';
         }
       } else if (error.request) {
-        errorTitle = 'Connection Error';
+        errorTitle = '🌐 Connection Error';
         errorMessage =
           'Unable to connect to the server. Please check your internet connection.';
       }
 
-      Alert.alert(errorTitle, errorMessage, [
-        {
-          text: 'OK',
-          onPress: () => setShowScanner(false),
-        },
-      ]);
+      Alert.alert(
+        errorTitle,
+        `\n${errorMessage}\n\nPlease try again.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => setShowScanner(false),
+            style: 'default',
+          },
+        ],
+        {cancelable: false},
+      );
     } finally {
       setIsLoading(false);
     }
@@ -181,12 +249,18 @@ export const HomeScreen = ({navigation}) => {
       fetchUserData(registrationId);
     } catch (error) {
       console.error('QR Code Error:', error);
-      Alert.alert('Error', 'Invalid QR code format. Please try again.', [
-        {
-          text: 'OK',
-          onPress: () => setShowScanner(false),
-        },
-      ]);
+      Alert.alert(
+        '⚠️ Error',
+        '\nInvalid QR code format.\n\nPlease try again with a valid QR code.',
+        [
+          {
+            text: 'OK',
+            onPress: () => setShowScanner(false),
+            style: 'default',
+          },
+        ],
+        {cancelable: false},
+      );
     }
   };
 
@@ -241,8 +315,10 @@ export const HomeScreen = ({navigation}) => {
           setShowVolunteerModal(false);
           setScannedData(null);
         }}
-        initialData={scannedData}
-        registrationId={scannedData?.registrationid}
+        initialData={selectedOption === 'scan' ? scannedData : null}
+        registrationId={
+          selectedOption === 'scan' ? scannedData?.registrationid : null
+        }
       />
     );
   }
